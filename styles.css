@@ -1156,7 +1156,7 @@ td {
 
 .capital-category-list {
   display: grid;
-  gap: 8px;
+  gap: 16px;
 }
 
 .category-scope-tabs {
@@ -1361,12 +1361,7 @@ td {
 }
 
 .capital-category-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 12px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  display: grid;
-  gap: 8px;
+  cursor: default;
 }
 
 .capital-category-title {

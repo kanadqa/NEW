@@ -1686,7 +1686,7 @@ const renderCapitalCategories = () => {
     });
 
     const card = document.createElement("div");
-    card.className = "capital-category-card";
+    card.className = "category-card capital-category-card";
     card.innerHTML = `
       <div class="capital-category-title">
         <span>${category.name}</span>

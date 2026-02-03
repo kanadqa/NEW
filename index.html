@@ -205,20 +205,19 @@
               </div>
 
               <div class="category-panel" data-category-panel="capital">
-                <h3>Категории активов</h3>
-                <p class="hint">Категории и подкатегории капитала задаются вручную.</p>
-                <form id="capitalCategoryForm" class="form compact-form">
+                <h3>Добавить категорию или подкатегорию</h3>
+                <form id="capitalCategoryForm" class="form two-columns">
                   <label>
                     Категория
                     <input type="text" id="capitalCategoryName" placeholder="Например, Вклад" required />
                   </label>
                   <label>
-                    Подкатегория
+                    Подкатегория (опционально)
                     <input type="text" id="capitalSubcategoryName" placeholder="Например, Сбербанк" />
                   </label>
                   <button type="submit" class="button secondary">Добавить</button>
                 </form>
-                <div id="capitalCategoryManager" class="capital-category-list"></div>
+                <p class="hint">Если категория уже существует, будет добавлена подкатегория.</p>
               </div>
             </div>
           </section>
@@ -239,6 +238,16 @@
               Категории верхнего уровня
             </div>
             <div id="categoryManager" class="category-manager"></div>
+          </section>
+
+          <section class="card category-panel" data-category-panel="capital">
+            <div class="category-header">
+              <div>
+                <h2>Управление категориями капитала</h2>
+                <p class="hint">Удаляйте лишние категории и подкатегории из списка.</p>
+              </div>
+            </div>
+            <div id="capitalCategoryManager" class="category-manager capital-category-list"></div>
           </section>
         </section>
 
