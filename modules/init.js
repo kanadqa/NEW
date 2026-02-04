@@ -381,17 +381,72 @@ capitalAssetType.addEventListener("change", () => {
   }
 });
 
-capitalAssetsTable.addEventListener("click", (event) => {
-  const row = event.target.closest("tr");
-  if (!row || !row.dataset.assetId) {
-    return;
-  }
-  const asset = capitalState.assets.find((item) => item.id === row.dataset.assetId);
-  if (!asset) {
-    return;
-  }
-  capitalFillAssetForm(asset);
-});
+if (capitalAssetsSearch) {
+  capitalAssetsSearch.addEventListener("input", (event) => {
+    capitalCaptureAssetsOpenState();
+    capitalAssetListState.query = event.target.value;
+    renderCapitalAssets();
+  });
+}
+
+if (capitalAssetsTypeFilter) {
+  capitalAssetsTypeFilter.addEventListener("change", (event) => {
+    capitalCaptureAssetsOpenState();
+    capitalAssetListState.type = event.target.value;
+    renderCapitalAssets();
+  });
+}
+
+if (capitalAssetsLiquidityFilter) {
+  capitalAssetsLiquidityFilter.addEventListener("change", (event) => {
+    capitalCaptureAssetsOpenState();
+    capitalAssetListState.liquidity = event.target.value;
+    renderCapitalAssets();
+  });
+}
+
+if (capitalAssetsSortKey) {
+  capitalAssetsSortKey.addEventListener("change", (event) => {
+    capitalCaptureAssetsOpenState();
+    capitalAssetListState.sortKey = event.target.value;
+    renderCapitalAssets();
+  });
+}
+
+if (capitalAssetsSortDir) {
+  capitalAssetsSortDir.addEventListener("click", () => {
+    capitalCaptureAssetsOpenState();
+    capitalAssetListState.sortDir = capitalAssetListState.sortDir === "asc" ? "desc" : "asc";
+    capitalAssetsSortDir.textContent = capitalAssetListState.sortDir === "asc" ? "По возр. ⬆" : "По убыв. ⬇";
+    renderCapitalAssets();
+  });
+}
+
+if (capitalAssetsList) {
+  capitalAssetsList.addEventListener("toggle", () => {
+    capitalCaptureAssetsOpenState();
+  });
+  capitalAssetsList.addEventListener("click", (event) => {
+    const editId = event.target.closest("[data-asset-edit]")?.dataset.assetEdit;
+    if (editId) {
+      const asset = capitalState.assets.find((item) => item.id === editId);
+      if (asset) {
+        capitalFillAssetForm(asset);
+        capitalSetAssetDrawer(true);
+      }
+      return;
+    }
+    const deleteId = event.target.closest("[data-asset-delete]")?.dataset.assetDelete;
+    if (deleteId) {
+      if (!confirm("Удалить актив?")) {
+        return;
+      }
+      capitalState.assets = capitalState.assets.filter((item) => item.id !== deleteId);
+      saveCapitalV2(capitalState);
+      renderCapitalView();
+    }
+  });
+}
 
 capitalDebtForm.addEventListener("submit", (event) => {
   event.preventDefault();

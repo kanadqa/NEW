@@ -1280,6 +1280,14 @@ const renderCapitalOverviewDashboard = () => {
     currency: capitalState.settings.baseCurrency,
     minimumFractionDigits: 2,
   });
+  if (capitalOverviewCurrency) {
+    capitalOverviewCurrency.textContent = capitalState.settings.baseCurrency;
+  }
+  if (capitalOverviewNote) {
+    capitalOverviewNote.textContent = totals.missingRates.length
+      ? `Не учтены суммы без курса: ${[...new Set(totals.missingRates)].join(", ")}.`
+      : "";
+  }
   capitalOverviewTotal.textContent = formatter.format(totals.assetsTotal);
   if (capitalOverviewReal) {
     capitalOverviewReal.textContent = formatter.format(totals.netWorth);
@@ -1470,86 +1478,418 @@ const renderCapitalCategories = () => {
   });
 };
 
-const renderCapitalAssets = () => {
-  capitalAssetsTable.innerHTML = "";
-  const items = capitalState.assets;
-  if (!items.length) {
-    const row = document.createElement("tr");
-    row.innerHTML = "<td colspan='10' class='hint'>Добавьте первый актив.</td>";
-    capitalAssetsTable.appendChild(row);
+const capitalAssetListState = {
+  query: "",
+  type: "all",
+  liquidity: "all",
+  sortKey: "current",
+  sortDir: "desc",
+  open: {
+    categories: new Set(),
+    subcategories: new Set(),
+    rows: new Set(),
+  },
+};
+
+const capitalEscapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  "\"": "&quot;",
+  "'": "&#039;",
+}[char]));
+
+const capitalFormatCurrency = (value, currency) => new Intl.NumberFormat("ru-RU", {
+  style: "currency",
+  currency,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+}).format(value);
+
+const capitalAssetProfit = (asset) => (asset.amount ?? 0) - (asset.invested ?? 0);
+
+const capitalAssetProfitPct = (asset) => {
+  const invested = asset.invested ?? 0;
+  if (!invested) {
+    return 0;
+  }
+  return capitalAssetProfit(asset) / invested;
+};
+
+const capitalAssetAnomaly = (asset) => {
+  const invested = asset.invested ?? 0;
+  const current = asset.amount ?? 0;
+  if (invested > current * 3 && current > 0) {
+    return "high";
+  }
+  if (Math.abs(capitalAssetProfitPct(asset)) > 1.5) {
+    return "medium";
+  }
+  return "none";
+};
+
+const capitalAssetLiquidityClass = (value) => ({
+  high: "good",
+  medium: "mid",
+  low: "out",
+  locked: "out",
+}[value] || "");
+
+const capitalAssetSort = (key, direction) => {
+  const multiplier = direction === "asc" ? 1 : -1;
+  return (a, b) => {
+    if (key === "name") {
+      return multiplier * a.name.localeCompare(b.name, "ru");
+    }
+    if (key === "profit") {
+      return multiplier * (capitalAssetProfit(a) - capitalAssetProfit(b));
+    }
+    if (key === "endDate") {
+      const dateA = a.maturityDate ? new Date(a.maturityDate).getTime() : Infinity;
+      const dateB = b.maturityDate ? new Date(b.maturityDate).getTime() : Infinity;
+      return multiplier * (dateA - dateB);
+    }
+    return multiplier * ((a.amount ?? 0) - (b.amount ?? 0));
+  };
+};
+
+const capitalCaptureAssetsOpenState = () => {
+  if (!capitalAssetsList) {
     return;
   }
+  capitalAssetsList.querySelectorAll("details[data-asset-category]").forEach((item) => {
+    const key = item.dataset.assetCategory;
+    if (!key) {
+      return;
+    }
+    if (item.open) {
+      capitalAssetListState.open.categories.add(key);
+    } else {
+      capitalAssetListState.open.categories.delete(key);
+    }
+  });
+  capitalAssetsList.querySelectorAll("details[data-asset-subcategory]").forEach((item) => {
+    const key = item.dataset.assetSubcategory;
+    if (!key) {
+      return;
+    }
+    if (item.open) {
+      capitalAssetListState.open.subcategories.add(key);
+    } else {
+      capitalAssetListState.open.subcategories.delete(key);
+    }
+  });
+  capitalAssetsList.querySelectorAll("details[data-asset-row]").forEach((item) => {
+    const key = item.dataset.assetRow;
+    if (!key) {
+      return;
+    }
+    if (item.open) {
+      capitalAssetListState.open.rows.add(key);
+    } else {
+      capitalAssetListState.open.rows.delete(key);
+    }
+  });
+};
+
+const renderCapitalAssets = () => {
+  if (!capitalAssetsList) {
+    return;
+  }
+  capitalAssetsList.innerHTML = "";
+  if (capitalAssetsNote) {
+    capitalAssetsNote.textContent = "";
+  }
+
+  const items = capitalState.assets;
+  if (!items.length) {
+    capitalAssetsList.innerHTML = "<p class='hint'>Добавьте первый актив.</p>";
+    if (capitalAssetsShown) {
+      capitalAssetsShown.textContent = "Показано: 0";
+    }
+    if (capitalAssetsSummary) {
+      capitalAssetsSummary.innerHTML = "";
+    }
+    return;
+  }
+
+  const query = capitalAssetListState.query.trim().toLowerCase();
+  const filtered = items.filter((item) => {
+    if (capitalAssetListState.type !== "all" && item.type !== capitalAssetListState.type) {
+      return false;
+    }
+    if (capitalAssetListState.liquidity !== "all" && item.liquidity !== capitalAssetListState.liquidity) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const haystack = [
+      item.name,
+      item.category,
+      item.subcategory,
+      capitalTypeLabel(item.type),
+      item.currency,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+
+  if (capitalAssetsShown) {
+    capitalAssetsShown.textContent = `Показано: ${filtered.length}`;
+  }
+
+  const missingRates = new Set();
+  let totalCurrent = 0;
+  let totalInvested = 0;
+
+  filtered.forEach((item) => {
+    const amount = capitalToBase(item.amount, item.currency);
+    if (amount == null && capitalIsUnconvertible(item)) {
+      missingRates.add(item.currency);
+      return;
+    }
+    const invested = capitalToBase(item.invested ?? 0, item.currency);
+    totalCurrent += amount ?? item.amount;
+    totalInvested += invested ?? (item.invested ?? 0);
+  });
+
+  if (capitalAssetsSummary) {
+    const profit = totalCurrent - totalInvested;
+    const profitPct = totalInvested ? profit / totalInvested : 0;
+    const profitClass = profit > 0 ? "pos" : (profit < 0 ? "neg" : "");
+    capitalAssetsSummary.innerHTML = `
+      <div class="capital-assets-summary-card">
+        <div class="k">Всего</div>
+        <div class="v">${capitalFormatMoney(totalCurrent)}</div>
+        <div class="small">Текущая оценка (в базе)</div>
+      </div>
+      <div class="capital-assets-summary-card">
+        <div class="k">Вложено</div>
+        <div class="v">${capitalFormatMoney(totalInvested)}</div>
+        <div class="small">Сумма внесений</div>
+      </div>
+      <div class="capital-assets-summary-card">
+        <div class="k">Прибыль</div>
+        <div class="v ${profitClass}">${capitalFormatMoney(profit)}</div>
+        <div class="small">${new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 1 }).format(profitPct)}</div>
+      </div>
+    `;
+  }
+
+  if (capitalAssetsNote && missingRates.size) {
+    capitalAssetsNote.textContent = `Не учтены суммы без курса: ${[...missingRates].join(", ")}.`;
+  }
+
   const grouped = new Map();
-  items.forEach((item) => {
-    const category = capitalTypeLabel(item.type) || item.category || "Без категории";
+  filtered.forEach((item) => {
+    const category = item.category || item.section || "Без категории";
+    const subcategory = item.subcategory || "Без подкатегории";
     if (!grouped.has(category)) {
       grouped.set(category, new Map());
     }
-    const subcategory = item.subcategory || "Без подкатегории";
-    if (!grouped.get(category).has(subcategory)) {
-      grouped.get(category).set(subcategory, []);
+    const subMap = grouped.get(category);
+    if (!subMap.has(subcategory)) {
+      subMap.set(subcategory, []);
     }
-    grouped.get(category).get(subcategory).push(item);
+    subMap.get(subcategory).push(item);
   });
 
-  const buildAssetRow = (item) => {
-    const row = document.createElement("tr");
-    row.dataset.assetId = item.id;
-    row.classList.add("capital-asset-row");
-    const invested = item.invested ?? 0;
-    const profit = item.amount - invested;
-    const amountInBase = capitalToBase(item.amount, item.currency);
-    const amountLabel = amountInBase == null && capitalIsUnconvertible(item)
-      ? `нет курса для ${item.currency}`
-      : capitalFormatMoney(amountInBase ?? item.amount);
-    const expectedProfitLabel = item.expectedProfit != null && item.expectedProfit !== ""
-      ? (() => {
-        const converted = capitalToBase(item.expectedProfit, item.currency);
-        if (converted == null && capitalIsUnconvertible(item)) {
-          return `нет курса для ${item.currency}`;
-        }
-        return capitalFormatMoney(converted ?? item.expectedProfit);
-      })()
-      : "—";
-    const maturityLabel = item.type === "deposit" ? (item.maturityDate || "—") : "";
-    row.innerHTML = `
-      <td>${item.name}</td>
-      <td>${capitalTypeLabel(item.type)}</td>
-      <td>${item.currency}</td>
-      <td>
-        ${item.amount.toFixed(2)}
-        <div class="hint">${amountLabel}</div>
-      </td>
-      <td>${invested.toFixed(2)}</td>
-      <td>${profit.toFixed(2)}</td>
-      <td>${maturityLabel}</td>
-      <td>
-        ${item.expectedProfit != null ? item.expectedProfit.toFixed(2) : "—"}
-        <div class="hint">${expectedProfitLabel}</div>
-      </td>
-      <td>${capitalLiquidityLabel(item.liquidity)}</td>
-      <td>${item.note || "—"}</td>
+  const sortedGroups = [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b, "ru"));
+  const formatter = new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 1 });
+
+  const openAllCategories = capitalAssetListState.open.categories.size === 0;
+  const openAllSubcategories = capitalAssetListState.open.subcategories.size === 0;
+  const openAllRows = capitalAssetListState.open.rows.size === 0;
+
+  sortedGroups.forEach(([category, subcategories]) => {
+    const categoryKey = `cat:${category}`;
+    const categoryAssets = [...subcategories.values()].flat();
+    const categoryCurrent = categoryAssets.reduce((sum, asset) => {
+      const converted = capitalToBase(asset.amount, asset.currency);
+      if (converted == null && capitalIsUnconvertible(asset)) {
+        return sum;
+      }
+      return sum + (converted ?? asset.amount);
+    }, 0);
+    const categoryInvested = categoryAssets.reduce((sum, asset) => {
+      const invested = capitalToBase(asset.invested ?? 0, asset.currency);
+      if (invested == null && capitalIsUnconvertible(asset)) {
+        return sum;
+      }
+      return sum + (invested ?? (asset.invested ?? 0));
+    }, 0);
+    const categoryProfit = categoryCurrent - categoryInvested;
+    const categoryProfitClass = categoryProfit > 0 ? "pos" : (categoryProfit < 0 ? "neg" : "muted");
+
+    const categoryDetails = document.createElement("details");
+    categoryDetails.className = "capital-assets-category";
+    categoryDetails.dataset.assetCategory = categoryKey;
+    if (openAllCategories || capitalAssetListState.open.categories.has(categoryKey)) {
+      categoryDetails.open = true;
+    }
+    categoryDetails.innerHTML = `
+      <summary class="capital-assets-category-summary">
+        <div class="capital-assets-category-left">
+          <div class="capital-assets-icon"><span>💰</span></div>
+          <div>
+            <div class="capital-assets-category-name">${capitalEscapeHtml(category)}</div>
+            <div class="capital-assets-category-meta">${categoryAssets.length} актив(а)</div>
+          </div>
+        </div>
+        <div class="capital-assets-category-right">
+          <div class="money">${capitalFormatMoney(categoryCurrent)}</div>
+          <div class="profit ${categoryProfitClass}">${capitalFormatMoney(categoryProfit)}</div>
+        </div>
+      </summary>
+      <div class="capital-assets-sublist"></div>
     `;
-    return row;
-  };
 
-  grouped.forEach((subcategories, categoryName) => {
-    const categoryRow = document.createElement("tr");
-    categoryRow.className = "capital-table-section";
-    categoryRow.innerHTML = `<td colspan="10">${categoryName}</td>`;
-    capitalAssetsTable.appendChild(categoryRow);
+    const subContainer = categoryDetails.querySelector(".capital-assets-sublist");
+    const sortedSub = [...subcategories.entries()].sort(([a], [b]) => a.localeCompare(b, "ru"));
+    sortedSub.forEach(([subcategory, assets]) => {
+      const subKey = `sub:${category}::${subcategory}`;
+      const subCurrent = assets.reduce((sum, asset) => {
+        const converted = capitalToBase(asset.amount, asset.currency);
+        if (converted == null && capitalIsUnconvertible(asset)) {
+          return sum;
+        }
+        return sum + (converted ?? asset.amount);
+      }, 0);
+      const subInvested = assets.reduce((sum, asset) => {
+        const invested = capitalToBase(asset.invested ?? 0, asset.currency);
+        if (invested == null && capitalIsUnconvertible(asset)) {
+          return sum;
+        }
+        return sum + (invested ?? (asset.invested ?? 0));
+      }, 0);
+      const subProfit = subCurrent - subInvested;
+      const subProfitClass = subProfit > 0 ? "pos" : (subProfit < 0 ? "neg" : "muted");
 
-    subcategories.forEach((assets, subcategoryName) => {
-      const subRow = document.createElement("tr");
-      subRow.className = "capital-table-subsection";
-      subRow.innerHTML = `<td colspan="10">${subcategoryName}</td>`;
-      capitalAssetsTable.appendChild(subRow);
-      assets.forEach((asset) => {
-        capitalAssetsTable.appendChild(buildAssetRow(asset));
-      });
+      const subDetails = document.createElement("details");
+      subDetails.className = "capital-assets-subcategory";
+      subDetails.dataset.assetSubcategory = subKey;
+      if (openAllSubcategories || capitalAssetListState.open.subcategories.has(subKey)) {
+        subDetails.open = true;
+      }
+      subDetails.innerHTML = `
+        <summary class="capital-assets-subcategory-summary">
+          <div>
+            <div class="capital-assets-subcategory-name">${capitalEscapeHtml(subcategory)}</div>
+            <div class="capital-assets-subcategory-meta">${assets.length} актив(а)</div>
+          </div>
+          <div class="capital-assets-category-right">
+            <div class="money">${capitalFormatMoney(subCurrent)}</div>
+            <div class="profit ${subProfitClass}">${capitalFormatMoney(subProfit)}</div>
+          </div>
+        </summary>
+        <div class="capital-assets-table"></div>
+      `;
+
+      const table = subDetails.querySelector(".capital-assets-table");
+      if (assets.length > 1) {
+        const head = document.createElement("div");
+        head.className = "capital-assets-head";
+        head.innerHTML = `
+          <div>Актив</div>
+          <div class="cell-r">Сумма</div>
+          <div class="cell-r">Прибыль</div>
+          <div class="cell-r">Ликвидность</div>
+        `;
+        table.appendChild(head);
+      }
+
+      assets
+        .slice()
+        .sort(capitalAssetSort(capitalAssetListState.sortKey, capitalAssetListState.sortDir))
+        .forEach((asset) => {
+          const invested = asset.invested ?? 0;
+          const profit = capitalAssetProfit(asset);
+          const profitPct = capitalAssetProfitPct(asset);
+          const anomaly = capitalAssetAnomaly(asset);
+          const rowKey = `row:${asset.id}`;
+          const profitClass = profit > 0 ? "pos" : (profit < 0 ? "neg" : "muted");
+          const row = document.createElement("details");
+          row.className = "capital-assets-row";
+          row.dataset.assetRow = rowKey;
+          row.dataset.assetId = asset.id;
+          if (openAllRows || capitalAssetListState.open.rows.has(rowKey)) {
+            row.open = true;
+          }
+          const baseAmount = capitalToBase(asset.amount, asset.currency);
+          const baseProfit = capitalToBase(profit, asset.currency);
+          const baseHint = baseAmount == null && capitalIsUnconvertible(asset)
+            ? `нет курса для ${asset.currency}`
+            : `в базе ${capitalFormatMoney(baseAmount ?? asset.amount)}`;
+          const profitHint = baseProfit == null && capitalIsUnconvertible(asset)
+            ? `нет курса для ${asset.currency}`
+            : `в базе ${capitalFormatMoney(baseProfit ?? profit)}`;
+          const pctLabel = anomaly !== "none" ? "проверь данные" : formatter.format(profitPct);
+          row.innerHTML = `
+            <summary class="capital-assets-row-summary">
+              <div>
+                <div class="capital-assets-row-main">
+                  <span class="capital-assets-chevron">▸</span>
+                  <div>
+                    <div class="capital-assets-name">
+                      ${capitalEscapeHtml(asset.name)}
+                      ${anomaly !== "none" ? "<span class='capital-assets-flag'>⚠ проверить</span>" : ""}
+                    </div>
+                    <div class="capital-assets-meta">${capitalEscapeHtml(capitalTypeLabel(asset.type))} • ${capitalEscapeHtml(asset.currency)}${asset.maturityDate ? ` • до ${capitalEscapeHtml(asset.maturityDate)}` : ""}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="cell-r">
+                <div class="money">${capitalFormatCurrency(asset.amount, asset.currency)}</div>
+                <div class="capital-assets-meta">вложено ${capitalFormatCurrency(invested, asset.currency)}</div>
+                <div class="capital-assets-meta">${baseHint}</div>
+              </div>
+              <div class="cell-r">
+                <div class="money ${profitClass}">${capitalFormatCurrency(profit, asset.currency)}</div>
+                <div class="capital-assets-meta">${pctLabel}</div>
+                <div class="capital-assets-meta">${profitHint}</div>
+              </div>
+              <div class="cell-r">
+                <span class="capital-assets-badge ${capitalAssetLiquidityClass(asset.liquidity)}">${capitalEscapeHtml(capitalLiquidityLabel(asset.liquidity))}</span>
+              </div>
+            </summary>
+            <div class="capital-assets-details">
+              <div class="capital-assets-detail-grid">
+                <div class="capital-assets-detail-box">
+                  <div class="k">Категории</div>
+                  <div class="p">Категория: ${capitalEscapeHtml(asset.category || asset.section || "—")}</div>
+                  <div class="p">Подкатегория: ${capitalEscapeHtml(asset.subcategory || "—")}</div>
+                </div>
+                <div class="capital-assets-detail-box">
+                  <div class="k">Параметры</div>
+                  <div class="p">Потенц. доходность: ${asset.expectedProfit != null ? capitalFormatCurrency(asset.expectedProfit, asset.currency) : "—"}</div>
+                  <div class="p">Дата окончания: ${asset.maturityDate ? capitalEscapeHtml(asset.maturityDate) : "—"}</div>
+                </div>
+                <div class="capital-assets-detail-box">
+                  <div class="k">Действия</div>
+                  <div class="capital-assets-actions">
+                    <button class="btn" type="button" data-asset-edit="${asset.id}">Редактировать</button>
+                    <button class="btn danger" type="button" data-asset-delete="${asset.id}">Удалить</button>
+                  </div>
+                </div>
+              </div>
+              ${anomaly !== "none" ? `
+                <div class="capital-assets-warning">
+                  Похоже на аномалию в данных. Проверьте сумму и вложения.
+                </div>
+              ` : ""}
+            </div>
+          `;
+          table.appendChild(row);
+        });
+
+      subContainer.appendChild(subDetails);
     });
-  });
 
+    capitalAssetsList.appendChild(categoryDetails);
+  });
 };
 
 const debtMetrics = () => {
@@ -2293,4 +2633,3 @@ const deleteCategory = (categoryName) => {
   saveCategories(categories);
   renderCategories();
 };
-

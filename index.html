@@ -354,50 +354,141 @@
           </section>
 
           <section class="capital-tab is-active" data-capital-tab-panel="overview">
-            <section class="summary capital-summary">
-              <div class="summary-card income">
-                <span>Активы</span>
-                <strong id="capitalAssetsTotal">0 ₽</strong>
-              </div>
-              <div class="summary-card expense">
-                <span>Долги</span>
-                <strong id="capitalDebtsTotal">0 ₽</strong>
-              </div>
-              <div class="summary-card balance">
-                <span>Чистый капитал</span>
-                <strong id="capitalNetWorth">0 ₽</strong>
-              </div>
-            </section>
-
-            <section class="card capital-grid">
-              <div class="capital-card capital-full">
-                <div class="chart-title">
-                  <h3>Структура активов</h3>
-                  <div class="chip-group">
-                    <button class="chip is-active" data-capital-structure="bars">Список</button>
-                    <button class="chip" data-capital-structure="pie">Круговая</button>
-                  </div>
+            <section class="capital-overview wow">
+              <div class="capital-overview-top">
+                <div>
+                  <h3>Обзор капитала</h3>
+                  <p class="hint">Быстрая сводка по активам, долгам и динамике за месяц.</p>
                 </div>
-                <div id="capitalAssetTypeChart" class="chart"></div>
-                <div id="capitalAssetTypePie" class="chart is-hidden"></div>
+                <div class="capital-overview-meta">
+                  <div class="capital-overview-badge">База: <strong id="capitalOverviewCurrency">RUB</strong></div>
+                  <span id="capitalOverviewNote" class="capital-overview-note"></span>
+                </div>
               </div>
 
-              <div class="capital-card capital-full">
-                <div class="chart-title">
-                  <h3>Мой общий капитал</h3>
-                  <div class="chip-group">
-                    <button class="chip is-active" data-capital-filter="all">Все</button>
-                    <button class="chip" data-capital-filter="high">Ликвидные</button>
-                    <button class="chip" data-capital-filter="low">Низколиквидные</button>
-                    <button class="chip" data-capital-filter="locked">Заблокированные</button>
+              <div class="capital-overview-cards">
+                <div class="capital-overview-card">
+                  <span>Активы</span>
+                  <strong id="capitalAssetsTotal">0 ₽</strong>
+                  <small>Текущая оценка</small>
+                </div>
+                <div class="capital-overview-card">
+                  <span>Долги</span>
+                  <strong id="capitalDebtsTotal">0 ₽</strong>
+                  <small>Обязательства</small>
+                </div>
+                <div class="capital-overview-card">
+                  <span>Чистый капитал</span>
+                  <strong id="capitalNetWorth">0 ₽</strong>
+                  <small>Активы минус долги</small>
+                </div>
+              </div>
+
+              <div class="capital-overview-hero">
+                <div class="capital-overview-hero-main">
+                  <span class="capital-overview-label">Общий капитал</span>
+                  <div class="capital-overview-value">
+                    <strong id="capitalOverviewTotal">0 ₽</strong>
+                    <span id="capitalOverviewDelta" class="capital-overview-delta">—</span>
+                  </div>
+                  <p class="hint">Динамика относительно прошлого месяца.</p>
+                </div>
+                <div class="capital-overview-hero-stats">
+                  <div class="capital-overview-stat">
+                    <span>Реальные деньги</span>
+                    <strong id="capitalOverviewReal">0 ₽</strong>
+                    <small>С учетом долгов</small>
+                  </div>
+                  <div class="capital-overview-stat">
+                    <span>Долги</span>
+                    <strong id="capitalOverviewDebts">0 ₽</strong>
+                    <small>Кредиты и обязательства</small>
                   </div>
                 </div>
-                <div id="capitalLedger" class="capital-ledger"></div>
-                <div class="capital-ledger-total">
-                  <span>Факт</span>
-                  <strong id="capitalLedgerTotal">0 ₽</strong>
-                </div>
-                <p id="capitalLedgerNote" class="hint"></p>
+              </div>
+
+              <div class="capital-overview-grid">
+                <article class="capital-overview-panel">
+                  <header class="capital-overview-panel-head">
+                    <div>
+                      <h4>Структура активов</h4>
+                      <p class="hint">Распределение по типам активов.</p>
+                    </div>
+                    <div class="chip-group">
+                      <button class="chip is-active" data-capital-structure="bars">Список</button>
+                      <button class="chip" data-capital-structure="pie">Круговая</button>
+                    </div>
+                  </header>
+                  <div id="capitalAssetTypeChart" class="chart"></div>
+                  <div id="capitalAssetTypePie" class="chart is-hidden"></div>
+                </article>
+
+                <article class="capital-overview-panel">
+                  <header class="capital-overview-panel-head">
+                    <div>
+                      <h4>Мой общий капитал</h4>
+                      <p class="hint">Отбор по ликвидности активов.</p>
+                    </div>
+                    <div class="chip-group">
+                      <button class="chip is-active" data-capital-filter="all">Все</button>
+                      <button class="chip" data-capital-filter="high">Ликвидные</button>
+                      <button class="chip" data-capital-filter="low">Низколиквидные</button>
+                      <button class="chip" data-capital-filter="locked">Заблокированные</button>
+                    </div>
+                  </header>
+                  <div id="capitalLedger" class="capital-ledger"></div>
+                  <div class="capital-ledger-total">
+                    <span>Факт</span>
+                    <strong id="capitalLedgerTotal">0 ₽</strong>
+                  </div>
+                  <p id="capitalLedgerNote" class="hint"></p>
+                </article>
+              </div>
+
+              <div class="capital-overview-panels">
+                <article class="capital-panel">
+                  <header class="capital-panel-header">
+                    <div>
+                      <h3>Активы</h3>
+                      <p class="hint">Самые крупные позиции.</p>
+                    </div>
+                    <span class="badge">В наличии</span>
+                  </header>
+                  <div id="capitalOverviewAssets" class="capital-overview-list"></div>
+                </article>
+
+                <article class="capital-panel">
+                  <header class="capital-panel-header">
+                    <div>
+                      <h3>Финансовые цели</h3>
+                      <p class="hint">Контроль ключевых планов.</p>
+                    </div>
+                    <span class="badge">Глобальные</span>
+                  </header>
+                  <div id="capitalOverviewGoals" class="capital-overview-list"></div>
+                </article>
+
+                <article class="capital-panel">
+                  <header class="capital-panel-header">
+                    <div>
+                      <h3>Динамика капитала</h3>
+                      <p class="hint">Последние месяцы.</p>
+                    </div>
+                    <span class="badge">Снимки</span>
+                  </header>
+                  <div id="capitalOverviewSnapshots" class="capital-overview-list"></div>
+                </article>
+
+                <article class="capital-panel">
+                  <header class="capital-panel-header">
+                    <div>
+                      <h3>Долги</h3>
+                      <p class="hint">Кредиты и обязательства.</p>
+                    </div>
+                    <span class="badge">Контроль</span>
+                  </header>
+                  <div id="capitalOverviewDebtsList" class="capital-overview-list"></div>
+                </article>
               </div>
             </section>
           </section>
@@ -502,34 +593,62 @@
                 </div>
               </div>
 
-              <div class="capital-card capital-full capital-assets-card">
-                <div class="chart-title capital-assets-title">
-                  <div class="capital-assets-heading">
+              <div class="capital-card capital-full capital-assets-wow">
+                <div class="capital-assets-top">
+                  <div>
                     <h3>Список активов</h3>
-                    <p class="capital-assets-subtitle">Все активы в едином реестре с ключевыми показателями и заметками.</p>
+                    <p class="hint">Наглядный список с фильтрами, сортировкой и деталями по каждой позиции.</p>
+                  </div>
+                  <div class="capital-assets-controls">
+                    <label class="capital-assets-control" title="Поиск по названию/категории/типу/валюте">
+                      <span class="muted">🔎</span>
+                      <input id="capitalAssetsSearch" placeholder="Поиск…" />
+                    </label>
+                    <label class="capital-assets-control">
+                      <span class="muted">Тип</span>
+                      <select id="capitalAssetsTypeFilter">
+                        <option value="all">Все</option>
+                        <option value="cash">Наличные</option>
+                        <option value="bank">Банк</option>
+                        <option value="deposit">Вклад</option>
+                        <option value="investment">Инвестиции</option>
+                        <option value="real_estate">Недвижимость</option>
+                        <option value="other">Другое</option>
+                      </select>
+                    </label>
+                    <label class="capital-assets-control">
+                      <span class="muted">Ликвидность</span>
+                      <select id="capitalAssetsLiquidityFilter">
+                        <option value="all">Любая</option>
+                        <option value="high">Сразу</option>
+                        <option value="medium">1–3 дня</option>
+                        <option value="low">Долго</option>
+                        <option value="locked">Заблокировано</option>
+                      </select>
+                    </label>
+                    <label class="capital-assets-control">
+                      <span class="muted">Сорт.</span>
+                      <select id="capitalAssetsSortKey">
+                        <option value="current">Сумма</option>
+                        <option value="profit">Прибыль</option>
+                        <option value="endDate">Дата окончания</option>
+                        <option value="name">Название</option>
+                      </select>
+                    </label>
+                    <button class="capital-assets-pill" id="capitalAssetsSortDir" type="button">По убыв. ⬇</button>
                   </div>
                 </div>
-                <div class="capital-assets-view is-active">
-                  <div class="table-wrapper">
-                    <table class="capital-table capital-table-structured capital-assets-table">
-                      <thead>
-                        <tr>
-                          <th>Название</th>
-                          <th>Тип</th>
-                          <th>Валюта</th>
-                          <th>Сумма</th>
-                          <th>Вложено</th>
-                          <th>Прибыль</th>
-                          <th>Дата окончания</th>
-                  <th>Потенц. доходность</th>
-                  <th>Ликвидность</th>
-                  <th>Комментарий</th>
-                </tr>
-                      </thead>
-                      <tbody id="capitalAssetsTable"></tbody>
-                    </table>
+
+                <div id="capitalAssetsSummary" class="capital-assets-summary"></div>
+
+                <div class="capital-assets-section">
+                  <div class="capital-assets-section-head">
+                    <div class="title">Активы</div>
+                    <div id="capitalAssetsShown" class="count">Показано: 0</div>
                   </div>
+                  <div id="capitalAssetsList" class="capital-assets-list"></div>
                 </div>
+                <p id="capitalAssetsNote" class="capital-assets-note"></p>
               </div>
             </section>
           </section>
