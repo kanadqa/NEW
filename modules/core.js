@@ -241,120 +241,6 @@ const loadCategories = async () => {
   };
 };
 
-const loadCapitalV2 = async () => {
-  try {
-    const raw = await dbGet(CAPITAL_KEY_V2);
-    if (raw) {
-      return JSON.parse(raw);
-    }
-  } catch (error) {
-    console.error("Не удалось загрузить капитал", error);
-  }
-  return null;
-};
-
-const saveCapitalV2 = (nextState) => {
-  dbSet(CAPITAL_KEY_V2, JSON.stringify(nextState));
-};
-
-const loadCapitalV1 = async () => {
-  try {
-    const raw = await dbGet(CAPITAL_KEY_V1);
-    return raw ? JSON.parse(raw) : null;
-  } catch (error) {
-    console.error("Не удалось загрузить капитал (v1)", error);
-    return null;
-  }
-};
-
-const migrateCapitalState = async () => {
-  const existing = await loadCapitalV2();
-  if (existing) {
-    return existing;
-  }
-
-  const migratedFlag = await dbGet(CAPITAL_MIGRATED_KEY);
-  const legacy = await loadCapitalV1();
-  const baseState = {
-    assets: [],
-    debts: [],
-    goals: [],
-    snapshots: [],
-    settings: {
-      baseCurrency: "RUB",
-      fxRates: {},
-    },
-  };
-
-  if (!legacy || migratedFlag) {
-    saveCapitalV2(baseState);
-    dbSet(CAPITAL_MIGRATED_KEY, "true");
-    return baseState;
-  }
-
-  const now = new Date().toISOString();
-  const mappedAssets = (legacy.assets || []).map((item) => ({
-    id: (crypto.randomUUID?.() || `asset-${Date.now()}-${Math.random()}`),
-    name: item.name,
-    type: "bank",
-    currency: "RUB",
-    amount: item.amount,
-    invested: item.amount,
-    section: item.type === "deposit" ? "Вклады" : "В наличии",
-    liquidity: "high",
-    liquidityDays: null,
-    expectedProfit: item.type === "deposit" ? 0 : null,
-    maturityDate: item.type === "deposit" ? (item.unlockDate || "") : "",
-    institution: "",
-    note: item.note || "",
-    updatedAt: now,
-  }));
-  const mappedDebts = (legacy.debts || []).map((item) => ({
-    id: (crypto.randomUUID?.() || `debt-${Date.now()}-${Math.random()}`),
-    name: item.name,
-    type: "loan",
-    currency: "RUB",
-    principal: item.amount,
-    apr: null,
-    paymentMin: null,
-    dueDay: null,
-    note: item.note || "",
-    updatedAt: now,
-  }));
-  const mappedGoals = (legacy.goals || []).map((item) => ({
-    id: (crypto.randomUUID?.() || `goal-${Date.now()}-${Math.random()}`),
-    name: `Цель ${item.year}`,
-    kind: "netWorth",
-    targetAmount: item.target,
-    targetDate: `${item.year}-12`,
-    baselineAmount: item.actual ?? null,
-    note: "",
-  }));
-  const mappedSnapshots = (legacy.history || []).map((item, index, list) => {
-    const prev = list[index - 1];
-    const delta = prev ? item.total - prev.total : 0;
-    return {
-      month: item.month,
-      assetsTotal: item.total,
-      debtsTotal: 0,
-      netWorth: item.total,
-      delta,
-      note: "",
-    };
-  });
-
-  const migrated = {
-    ...baseState,
-    assets: mappedAssets,
-    debts: mappedDebts,
-    goals: mappedGoals,
-    snapshots: mappedSnapshots,
-  };
-  saveCapitalV2(migrated);
-  dbSet(CAPITAL_MIGRATED_KEY, "true");
-  return migrated;
-};
-
 const saveCategories = (nextCategories) => {
   dbSet(CATEGORY_KEY, JSON.stringify(nextCategories));
 };
@@ -367,74 +253,6 @@ let showAllExpenseCategories = false;
 let categoryFilter = "all";
 let reportGranularity = "daily";
 let reportRange = { start: "", end: "" };
-let capitalState = null;
-let capitalOverviewFilter = "all";
-let capitalEditingAssetId = null;
-
-const capitalIsUnconvertible = (asset) =>
-  asset.currency !== capitalState?.settings?.baseCurrency
-  && !capitalState?.settings?.fxRates?.[asset.currency];
-
-const normalizeCapitalState = () => {
-  if (!capitalState) {
-    return;
-  }
-  capitalState.settings = capitalState.settings || { baseCurrency: "RUB", fxRates: {} };
-  capitalState.settings.baseCurrency = capitalState.settings.baseCurrency || "RUB";
-  capitalState.settings.fxRates = capitalState.settings.fxRates || {};
-  if (!capitalState.assetCategories) {
-    capitalState.assetCategories = [];
-  }
-  if (!Array.isArray(capitalState.assetCategories)) {
-    capitalState.assetCategories = Object.entries(capitalState.assetCategories).map(([name, subs]) => ({
-      name,
-      subs: Array.isArray(subs) ? subs : [],
-    }));
-  }
-  capitalState.assets = (capitalState.assets || []).map((asset) => {
-    const isDeposit = asset.type === "deposit";
-    const maturityDate = asset.maturityDate || (isDeposit ? asset.unlockDate : "") || "";
-    const liquidity = maturityDate ? "locked" : (asset.liquidity || "high");
-    const categoryFallback = asset.section || (isDeposit ? "Вклады" : "В наличии");
-    return {
-      section: asset.section || (isDeposit ? "Вклады" : "В наличии"),
-      category: asset.category || categoryFallback,
-      subcategory: asset.subcategory || "",
-      invested: asset.invested ?? asset.amount ?? 0,
-      liquidity,
-      liquidityDays: asset.liquidityDays ?? null,
-      expectedProfit: isDeposit ? (asset.expectedProfit ?? null) : null,
-      maturityDate,
-      unconvertible: asset.unconvertible ?? false,
-      ...asset,
-    };
-  });
-  capitalState.assets = capitalState.assets.map((asset) => ({
-    ...asset,
-    unconvertible: capitalIsUnconvertible(asset),
-  }));
-  if (!capitalState.assetCategories.length) {
-    const categoryMap = new Map();
-    capitalState.assets.forEach((asset) => {
-      const name = asset.category || asset.section || "В наличии";
-      if (!categoryMap.has(name)) {
-        categoryMap.set(name, new Set());
-      }
-      if (asset.subcategory) {
-        categoryMap.get(name).add(asset.subcategory);
-      }
-    });
-    capitalState.assetCategories = [...categoryMap.entries()].map(([name, subs]) => ({
-      name,
-      subs: [...subs],
-    }));
-  }
-  capitalState.debts = capitalState.debts || [];
-  capitalState.goals = capitalState.goals || [];
-  capitalState.snapshots = capitalState.snapshots || [];
-};
-
-normalizeCapitalState();
 
 const pushHistory = () => {
   historyStack.push({
@@ -896,3 +714,416 @@ const renderCharts = () => {
   syncToggleButton(toggleSubcategoryButton, showAllSubcategories, canExpandExpenseSubcategories);
 };
 
+const getCategoryNames = (type) =>
+  Object.keys(categories).filter((name) => (type ? categories[name].type === type : true));
+
+const renderCategoryOptions = () => {
+  const activeType = document.getElementById("type").value;
+  const options = getCategoryNames(activeType).sort();
+
+  categorySelect.innerHTML = "";
+
+  options.forEach((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    categorySelect.appendChild(option);
+  });
+
+  if (!categorySelect.value && options.length > 0) {
+    categorySelect.value = options[0];
+  }
+  updateSubcategoryOptions(categorySelect.value);
+};
+
+const renderCategoryListOptions = () => {
+  const activeType = categoryTypeSelect.value;
+  const names = getCategoryNames(activeType).sort();
+  categoryList.innerHTML = "";
+  names.forEach((name) => {
+    const listOption = document.createElement("option");
+    listOption.value = name;
+    categoryList.appendChild(listOption);
+  });
+};
+
+const renderCategories = () => {
+  renderCategoryOptions();
+  renderCategoryListOptions();
+  renderCategoryManager();
+};
+
+const updateSubcategoryOptions = (categoryName) => {
+  subcategorySelect.innerHTML = "";
+  if (!categoryName || !categories[categoryName]) {
+    subcategorySelect.disabled = true;
+    return;
+  }
+  const subs = categories[categoryName].subs || [];
+  if (subs.length === 0) {
+    subcategorySelect.disabled = true;
+    return;
+  }
+  subcategorySelect.disabled = false;
+  subs.forEach((sub) => {
+    const option = document.createElement("option");
+    option.value = sub;
+    option.textContent = sub;
+    subcategorySelect.appendChild(option);
+  });
+};
+
+const getDateBounds = (items) => {
+  if (!items.length) {
+    return { start: "", end: "" };
+  }
+  const dates = items.map((item) => item.date).sort();
+  return { start: dates[0], end: dates[dates.length - 1] };
+};
+
+const clampReportRange = (start, end) => {
+  if (!start || !end) {
+    return { start, end };
+  }
+  return start > end ? { start: end, end: start } : { start, end };
+};
+
+const setReportRange = (start, end) => {
+  const clamped = clampReportRange(start, end);
+  reportRange = clamped;
+  reportStartInput.value = clamped.start || "";
+  reportEndInput.value = clamped.end || "";
+};
+
+const filterTransactionsByRange = (items) => {
+  const { start, end } = reportRange;
+  if (!start && !end) {
+    return items;
+  }
+  return items.filter((item) => {
+    if (start && item.date < start) {
+      return false;
+    }
+    if (end && item.date > end) {
+      return false;
+    }
+    return true;
+  });
+};
+
+const renderReports = () => {
+  const filtered = filterTransactionsByRange(transactions);
+  const totals = filtered.reduce(
+    (acc, item) => {
+      if (item.type === "income") {
+        acc.income += item.amount;
+      } else {
+        acc.expense += item.amount;
+      }
+      return acc;
+    },
+    { income: 0, expense: 0 }
+  );
+
+  reportIncomeEl.textContent = currencyFormatter.format(totals.income);
+  reportExpenseEl.textContent = currencyFormatter.format(totals.expense);
+  reportBalanceEl.textContent = currencyFormatter.format(totals.income - totals.expense);
+  reportTransactionsCountEl.textContent = filtered.length;
+
+  const expenseCategoryTotals = buildTotals("expense", filtered);
+  const expenseSubcategoryTotals = buildSubTotals("expense", filtered);
+  const incomeSubcategoryTotals = buildSubTotals("income", filtered);
+
+  renderChart(
+    reportExpenseCategories,
+    expenseCategoryTotals,
+    "Нет расходов за выбранный период.",
+    { limit: 8 }
+  );
+  renderChart(
+    reportExpenseSubcategories,
+    expenseSubcategoryTotals,
+    "Нет расходов с подкатегориями за выбранный период.",
+    { limit: 8 }
+  );
+  renderChart(
+    reportIncomeSubcategories,
+    incomeSubcategoryTotals,
+    "Нет доходов с подкатегориями за выбранный период.",
+    { limit: 8 }
+  );
+
+  const seriesFormatter = reportGranularity === "monthly"
+    ? (date) => date.slice(0, 7)
+    : (date) => date;
+  renderLineChart(reportLineChart, buildSeries(seriesFormatter, filtered));
+};
+const renderCategoryManager = () => {
+  categoryManager.innerHTML = "";
+  const sorted = Object.entries(categories)
+    .filter(([name]) =>
+      categoryFilter === "all" ? true : categories[name].type === categoryFilter
+    )
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  sorted.forEach(([categoryName, payload]) => {
+    const subs = payload.subs || [];
+    const card = document.createElement("div");
+    card.className = "category-card";
+    card.dataset.category = categoryName;
+    card.draggable = true;
+
+    const header = document.createElement("div");
+    header.className = "category-card-header";
+
+    const title = document.createElement("div");
+    title.innerHTML = `<strong>${categoryName}</strong><span>${subs.length} подкатегорий</span>`;
+
+    const badge = document.createElement("span");
+    badge.className = `type-badge ${payload.type}`;
+    badge.textContent = payload.type === "income" ? "Доход" : "Расход";
+
+    const actions = document.createElement("div");
+    actions.className = "category-actions";
+
+    const renameBtn = document.createElement("button");
+    renameBtn.className = "chip";
+    renameBtn.textContent = "Переименовать";
+    renameBtn.addEventListener("click", () => {
+      const nextName = prompt("Новое имя категории", categoryName);
+      if (nextName) {
+        renameCategory(categoryName, nextName.trim());
+      }
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "chip danger";
+    deleteBtn.textContent = "Удалить";
+    deleteBtn.addEventListener("click", () => {
+      if (confirm(`Удалить категорию «${categoryName}»?`)) {
+        deleteCategory(categoryName);
+      }
+    });
+
+    actions.appendChild(renameBtn);
+    actions.appendChild(deleteBtn);
+    header.appendChild(title);
+    header.appendChild(badge);
+    header.appendChild(actions);
+
+    const list = document.createElement("div");
+    list.className = "subcategory-list";
+    list.dataset.dropzone = categoryName;
+
+    if (subs.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "Нет подкатегорий";
+      list.appendChild(empty);
+    }
+
+    subs.forEach((sub) => {
+      const row = document.createElement("div");
+      row.className = "subcategory-row";
+      row.draggable = true;
+      row.dataset.category = categoryName;
+      row.dataset.subcategory = sub;
+
+      const name = document.createElement("span");
+      name.textContent = sub;
+
+      const tools = document.createElement("div");
+      tools.className = "subcategory-tools";
+
+      const editBtn = document.createElement("button");
+      editBtn.className = "chip";
+      editBtn.textContent = "Редактировать";
+      editBtn.addEventListener("click", () => {
+        const nextName = prompt("Новое имя подкатегории", sub);
+        if (nextName) {
+          renameSubcategory(categoryName, sub, nextName.trim());
+        }
+      });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "chip danger";
+      deleteBtn.textContent = "Удалить";
+      deleteBtn.addEventListener("click", () => {
+        if (confirm(`Удалить подкатегорию «${sub}»?`)) {
+          deleteSubcategory(categoryName, sub);
+        }
+      });
+
+      tools.appendChild(editBtn);
+      tools.appendChild(deleteBtn);
+
+      row.appendChild(name);
+      row.appendChild(tools);
+      list.appendChild(row);
+    });
+
+    card.appendChild(header);
+    card.appendChild(list);
+    categoryManager.appendChild(card);
+  });
+};
+
+const handleDragStart = (event) => {
+  const subRow = event.target.closest(".subcategory-row");
+  const card = event.target.closest(".category-card");
+  if (subRow) {
+    event.dataTransfer.setData(
+      "text/plain",
+      JSON.stringify({
+        type: "subcategory",
+        category: subRow.dataset.category,
+        subcategory: subRow.dataset.subcategory,
+      })
+    );
+    event.dataTransfer.effectAllowed = "move";
+    subRow.classList.add("is-dragging");
+    return;
+  }
+
+  if (card) {
+    event.dataTransfer.setData(
+      "text/plain",
+      JSON.stringify({
+        type: "category",
+        category: card.dataset.category,
+      })
+    );
+    event.dataTransfer.effectAllowed = "move";
+    card.classList.add("is-dragging");
+  }
+};
+
+const handleDragEnd = (event) => {
+  const row = event.target.closest(".subcategory-row");
+  const card = event.target.closest(".category-card");
+  if (row) {
+    row.classList.remove("is-dragging");
+  }
+  if (card) {
+    card.classList.remove("is-dragging");
+  }
+  document
+    .querySelectorAll(".subcategory-list.is-drop-target, .category-dropzone.is-drop-target")
+    .forEach((list) => list.classList.remove("is-drop-target"));
+};
+
+const handleDragOver = (event) => {
+  const list = event.target.closest(".subcategory-list, .category-dropzone");
+  if (!list) {
+    return;
+  }
+  event.preventDefault();
+  list.classList.add("is-drop-target");
+  event.dataTransfer.dropEffect = "move";
+};
+
+const handleDragLeave = (event) => {
+  const list = event.target.closest(".subcategory-list, .category-dropzone");
+  if (list) {
+    list.classList.remove("is-drop-target");
+  }
+};
+
+const handleDrop = (event) => {
+  const list = event.target.closest(".subcategory-list");
+  const dropzone = event.target.closest(".category-dropzone");
+  event.preventDefault();
+
+  if (list) {
+    list.classList.remove("is-drop-target");
+  }
+  if (dropzone) {
+    dropzone.classList.remove("is-drop-target");
+  }
+
+  const payload = event.dataTransfer.getData("text/plain");
+  if (!payload) {
+    return;
+  }
+
+  const data = JSON.parse(payload);
+  const targetCategory = list ? list.dataset.dropzone : null;
+
+  if (list && targetCategory) {
+    if (data.type === "subcategory") {
+      moveSubcategory(data.category, data.subcategory, targetCategory);
+    }
+    if (data.type === "category") {
+      moveCategoryToCategory(data.category, targetCategory);
+    }
+    return;
+  }
+
+  if (dropzone && data.type === "subcategory") {
+    promoteSubcategoryToCategory(data.category, data.subcategory);
+  }
+};
+
+const render = () => {
+  updateSummary();
+  renderTable();
+  renderCharts();
+  renderReports();
+};
+
+const initializeReportRange = () => {
+  const bounds = getDateBounds(transactions);
+  if (bounds.end) {
+    const endDate = new Date(bounds.end);
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - 29);
+    setReportRange(startDate.toISOString().slice(0, 10), bounds.end);
+  } else {
+    const today = new Date().toISOString().slice(0, 10);
+    setReportRange(today, today);
+  }
+};
+
+const resetForm = () => {
+  document.getElementById("amount").value = "";
+  document.getElementById("note").value = "";
+  const dateInput = document.getElementById("date");
+  if (!dateInput.value) {
+    dateInput.valueAsDate = new Date();
+  }
+};
+
+const setView = (viewId) => {
+  const page = document.body.dataset.page || "main";
+  if (viewId === "capital" && page === "main") {
+    window.location.href = "capital.html";
+    return;
+  }
+  if (viewId !== "capital" && page === "capital") {
+    window.location.href = `index.html?view=${viewId}`;
+    return;
+  }
+  views.forEach((view) => {
+    view.classList.toggle("is-active", view.dataset.view === viewId);
+  });
+  navLinks.forEach((link) => {
+    link.classList.toggle("is-active", link.dataset.viewTarget === viewId);
+  });
+  const activeLabel = [...navLinks].find((link) => link.dataset.viewTarget === viewId);
+  if (activeLabel) {
+    viewTitle.textContent = activeLabel.textContent;
+  }
+  dbSet(VIEW_KEY, viewId);
+  if (viewId === "capital") {
+    renderCapitalView();
+  }
+};
+
+const setLayout = (layout) => {
+  document.body.classList.remove("layout-comfort", "layout-balanced", "layout-compact");
+  document.body.classList.add(`layout-${layout}`);
+  layoutButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.layout === layout);
+  });
+  dbSet(LAYOUT_KEY, layout);
+};
